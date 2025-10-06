@@ -1,0 +1,1 @@
+ffmpeg -i necrosis_comparison.mp4 -i music.mp3 -c copy -map 0:v:0 -map 1:a:0 -shortest combined_output.mp4

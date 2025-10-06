@@ -1,2 +1,4 @@
 # ML-Projects
-ml-shits
+
+### team divine comedy projects
+-- information decay

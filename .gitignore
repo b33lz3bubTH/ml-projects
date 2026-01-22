@@ -1,1 +1,8 @@
 *tweets.csv*
+
+
+venv/
+.venv/
+
+__pycache__
+

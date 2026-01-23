@@ -1,3 +1,0 @@
-fastapi==0.115.0
-uvicorn==0.31.0
-llama-cpp-python  # Adjust version as needed; install with pip install llama-cpp-python (may require build dependencies like cmake)

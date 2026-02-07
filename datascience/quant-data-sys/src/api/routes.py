@@ -22,15 +22,18 @@ async def scrape_url(
 ):
     """Scrape URL synchronously"""
     try:
-        result = await scraper_service.scrape(request)
-        
         repo = RepositoryService(session)
         job_id = await repo.create_scrape_job(request.url)
         await repo.update_job_status(job_id, "started")
         try:
+            result = await scraper_service.scrape(request)
             await repo.save_scrape_result(job_id, result)
             await repo.update_job_status(job_id, "completed")
+            job = await repo.get_scrape_job(job_id)
             await repo.commit()
+            if job:
+                result.job_created_at = job.created_at
+                result.job_processed_at = job.completed_at
         except Exception as e:
             await repo.update_job_status(job_id, "failed", str(e))
             await repo.rollback()

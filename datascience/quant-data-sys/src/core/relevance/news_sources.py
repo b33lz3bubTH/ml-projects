@@ -22,7 +22,7 @@ DEFAULT_NEWS_SOURCES: List[NewsSource] = [
     NewsSource("CNBC-TV18", "https://www.cnbctv18.com/", "/"),
     NewsSource("NDTV Profit", "https://www.ndtvprofit.com/", "/"),
     NewsSource("PIB (Press Information Bureau)", "https://pib.gov.in/", "/AllRelease.aspx", priority=-15),
-    NewsSource("Ministry of Finance", "https://finmin.nic.in/", "/press-releases", priority=-15),
+    NewsSource("Ministry of Finance", "https://finmin.gov.in/", "/press-releases", priority=-15),
     NewsSource(
         "SEBI (Securities & Exchange Board)",
         "https://www.sebi.gov.in/",

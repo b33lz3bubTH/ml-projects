@@ -99,29 +99,31 @@ class SpiderService:
             
             await self._apply_cooldown()
             
-            request = ScrapeRequest(url=url)
-            scrape_result = await self.scraper_service.scrape(request)
-            
-            # Second layer: Check content filter
-            if self.filter_service and self.filter_service.should_exclude_content(url, scrape_result.html or ""):
-                logger.info(f"[SPIDER] Content excluded by filter, skipping: {url}")
-                async with self.session_factory() as update_session:
-                    stmt = update(UrlQueue).where(UrlQueue.url == url).values(
-                        status="done",
-                        processing_count=1,
-                        error_message="Excluded by content filter",
-                        last_processed_at=datetime.utcnow()
-                    )
-                    await update_session.execute(stmt)
-                    await update_session.commit()
-                return None
-            
             async with self.session_factory() as repo_session:
                 repo = RepositoryService(repo_session)
                 job_id = await repo.create_scrape_job(url)
                 await repo.update_job_status(job_id, "started")
                 
                 try:
+                    request = ScrapeRequest(url=url)
+                    scrape_result = await self.scraper_service.scrape(request)
+
+                    # Second layer: Check content filter
+                    if self.filter_service and self.filter_service.should_exclude_content(url, scrape_result.html or ""):
+                        logger.info(f"[SPIDER] Content excluded by filter, skipping: {url}")
+                        await repo.update_job_status(job_id, "failed", "Excluded by content filter")
+                        await repo_session.commit()
+                        async with self.session_factory() as update_session:
+                            stmt = update(UrlQueue).where(UrlQueue.url == url).values(
+                                status="done",
+                                processing_count=1,
+                                error_message="Excluded by content filter",
+                                last_processed_at=datetime.utcnow()
+                            )
+                            await update_session.execute(stmt)
+                            await update_session.commit()
+                        return None
+
                     result_id = await repo.save_scrape_result(job_id, scrape_result)
                     await repo.update_job_status(job_id, "completed")
                     await repo_session.commit()

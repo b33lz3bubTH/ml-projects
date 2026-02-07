@@ -51,7 +51,7 @@ class DebugSaver:
     def save_debug_files(
         result: ScrapeResult,
         scraper_name: str
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Save HTML and JSON debug files to /tmp/<scraper_name>/
         
         Returns:
@@ -92,7 +92,7 @@ class DebugSaver:
             )
             logger.info(f"[DEBUG] Saved JSON to: {json_file}")
             
-            return (str(html_file), str(json_file))
+            return (str(html_file), str(json_file), filename_base)
         except Exception as e:
             logger.error(f"[DEBUG] Failed to save debug files: {e}", exc_info=True)
-            return (None, None)
+            return (None, None, None)

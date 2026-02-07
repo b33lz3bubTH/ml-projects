@@ -180,6 +180,8 @@ class SpiderService:
 
         sorted_links = sorted(article_links)
         logger.info(f"[SPIDER] Enqueueing {len(sorted_links)} article links from {source_url}")
+        links_with_priority = self._assign_priorities(sorted_links)
+        ordered_links = self._interleave_links_by_domain(links_with_priority)
         
         enqueued_count = 0
         skipped_count = 0
@@ -253,6 +255,16 @@ class SpiderService:
                 continue
         
         logger.info(f"[SPIDER] Enqueued {enqueued_count} links, skipped {skipped_count} links")
+
+    def _assign_priorities(self, links: Iterable[str]) -> List[Tuple[str, int]]:
+        """Assign priorities to links using the policy when available."""
+        links_with_priority: List[Tuple[str, int]] = []
+        for link in links:
+            priority = 0
+            if self.priority_policy:
+                priority = self.priority_policy.get_priority(link)
+            links_with_priority.append((link, priority))
+        return links_with_priority
 
     def _interleave_links_by_domain(
         self,

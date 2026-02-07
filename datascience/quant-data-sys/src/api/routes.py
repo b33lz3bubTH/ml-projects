@@ -5,12 +5,11 @@ from src.dto.scraper_dto import ScrapeRequest, ScrapeResult
 from src.api.dependencies import (
     get_db_session,
     get_scraper_service,
-    get_queue_service
+    get_spider_service
 )
 from src.services.scraper_service import ScraperService
-from src.services.queue_service import ScraperQueueService
+from src.services.spider_service import SpiderService
 from src.services.repository_service import RepositoryService
-from src.dto.queue_dto import QueueTaskDTO
 
 router = APIRouter()
 
@@ -42,33 +41,30 @@ async def scrape_url(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/scrape/async", response_model=dict)
-async def scrape_url_async(
-    request: ScrapeRequest,
-    queue_service: ScraperQueueService = Depends(get_queue_service),
-    session: AsyncSession = Depends(get_db_session)
+@router.post("/spider/enqueue", response_model=dict)
+async def enqueue_url(
+    request: ScrapeRequest
 ):
-    """Enqueue scrape task"""
+    """Enqueue URL for spider processing"""
     try:
-        await queue_service.start()
-        task_id = await queue_service.enqueue_scrape(request.url)
+        spider_service = get_spider_service()
+        await spider_service.start()
+        success = await spider_service.enqueue_url(request.url)
         
-        repo = RepositoryService(session)
-        job_id = await repo.create_scrape_job(request.url)
-        await repo.commit()
-        
-        return {"task_id": task_id, "job_id": job_id}
+        if success:
+            return {"status": "enqueued", "url": request.url}
+        else:
+            return {"status": "skipped", "url": request.url, "reason": "already processed or invalid"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/task/{task_id}", response_model=QueueTaskDTO)
-async def get_task_status(
-    task_id: str,
-    queue_service: ScraperQueueService = Depends(get_queue_service)
-):
-    """Get task status"""
-    task = queue_service.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+@router.get("/spider/stats", response_model=dict)
+async def get_spider_stats():
+    """Get spider queue statistics"""
+    try:
+        spider_service = get_spider_service()
+        stats = await spider_service.get_queue_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

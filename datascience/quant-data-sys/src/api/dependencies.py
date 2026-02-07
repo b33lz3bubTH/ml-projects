@@ -1,14 +1,15 @@
 from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.infrastructure.database.session import DatabaseManager
 from src.infrastructure.http.http_client_factory import HttpClientFactory
 from src.services.scraper_service import ScraperService
-from src.services.queue_service import ScraperQueueService
+from src.services.spider_service import SpiderService
 from src.dto.config_dto import AppConfigDTO
 
 _config: AppConfigDTO = None
 _db_manager: DatabaseManager = None
 _scraper_service: ScraperService = None
-_queue_service: ScraperQueueService = None
+_spider_service: SpiderService = None
 
 
 def get_config() -> AppConfigDTO:
@@ -44,14 +45,19 @@ def get_scraper_service() -> ScraperService:
     return _scraper_service
 
 
-def get_queue_service() -> ScraperQueueService:
-    """Get queue service (singleton)"""
-    global _queue_service
-    if _queue_service is None:
-        config = get_config()
-        scraper_service = get_scraper_service()
-        _queue_service = ScraperQueueService(
-            scraper_service,
-            max_workers=config.queue.max_workers
-        )
-    return _queue_service
+def get_spider_service() -> SpiderService:
+    """Get spider service - uses session factory"""
+    config = get_config()
+    scraper_service = get_scraper_service()
+    db_manager = get_db_manager()
+    
+    if db_manager.session_factory is None:
+        raise RuntimeError("Database not initialized")
+    
+    return SpiderService(
+        scraper_service,
+        db_manager.session_factory,
+        max_workers=3,
+        max_queue_size=876,
+        cooldown_seconds=config.retry.cooldown_seconds
+    )

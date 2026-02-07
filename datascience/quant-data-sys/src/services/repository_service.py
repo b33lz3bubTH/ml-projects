@@ -36,16 +36,21 @@ class RepositoryService:
         error_message: Optional[str] = None
     ):
         """Update job status"""
-        job = await self.session.get(ScrapeJob, job_id)
-        if job:
-            job.status = status
-            if status == "started":
-                job.started_at = datetime.utcnow()
-            elif status in ["completed", "failed"]:
-                job.completed_at = datetime.utcnow()
-            if error_message:
-                job.error_message = error_message
-            await self.session.flush()
+        try:
+            job = await self.session.get(ScrapeJob, job_id)
+            if job:
+                job.status = status
+                if status == "started":
+                    job.started_at = datetime.utcnow()
+                elif status in ["completed", "failed"]:
+                    job.completed_at = datetime.utcnow()
+                if error_message:
+                    job.error_message = error_message[:1000]
+                await self.session.flush()
+        except Exception as e:
+            logger.error(f"[REPO] Error updating job status: {e}")
+            await self.session.rollback()
+            raise
     
     async def save_scrape_result(
         self,
@@ -75,6 +80,9 @@ class RepositoryService:
             self.session.add(meta)
         
         for image_url in result.images:
+            if len(image_url) > 2048:
+                logger.warning(f"[REPO] Image URL too long ({len(image_url)} chars), truncating: {image_url[:100]}...")
+                image_url = image_url[:2048]
             image = ImageUrl(
                 result_id=result_id,
                 url=image_url,

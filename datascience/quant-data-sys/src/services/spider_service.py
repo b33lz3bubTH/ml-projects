@@ -1,0 +1,308 @@
+from typing import Optional, List
+import logging
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import select, update, and_
+from sqlalchemy.exc import IntegrityError
+from src.dto.scraper_dto import ScrapeRequest, ScrapeResult
+from src.services.scraper_service import ScraperService
+from src.services.repository_service import RepositoryService
+from src.infrastructure.database.models import UrlQueue
+from src.infrastructure.database.session import DatabaseManager
+from src.core.queue.async_queue import AsyncQueue
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+class SpiderService:
+    """Spider service for crawling URLs with queue management"""
+    
+    def __init__(
+        self,
+        scraper_service: ScraperService,
+        session_factory: async_sessionmaker,
+        max_workers: int = 3,
+        max_queue_size: int = 876,
+        cooldown_seconds: float = 1.0
+    ):
+        self.scraper_service = scraper_service
+        self.session_factory = session_factory
+        self.max_workers = max_workers
+        self.max_queue_size = max_queue_size
+        self.cooldown_seconds = cooldown_seconds
+        self.queue: Optional[AsyncQueue] = None
+        self.running = False
+        self._lock = asyncio.Lock()
+    
+    async def start(self):
+        """Start spider workers"""
+        async with self._lock:
+            if self.running:
+                logger.warning("[SPIDER] Already running")
+                return
+            
+            self.running = True
+            self.queue = AsyncQueue(
+                worker_func=self._process_url,
+                max_workers=self.max_workers,
+                max_queue_size=self.max_queue_size
+            )
+            await self.queue.start()
+            logger.info(f"[SPIDER] Started with {self.max_workers} workers, max queue: {self.max_queue_size}")
+    
+    async def stop(self):
+        """Stop spider workers"""
+        async with self._lock:
+            if not self.running:
+                return
+            
+            self.running = False
+            if self.queue:
+                await self.queue.stop()
+            logger.info("[SPIDER] Stopped")
+    
+    async def _process_url(self, url: str) -> Optional[ScrapeResult]:
+        """Process a single URL - uses its own session"""
+        logger.info(f"[SPIDER] Processing URL: {url}")
+        
+        try:
+            async with self.session_factory() as session:
+                stmt = select(UrlQueue).where(UrlQueue.url == url)
+                result = await session.execute(stmt)
+                url_record = result.scalar_one_or_none()
+                
+                if not url_record:
+                    logger.warning(f"[SPIDER] URL not found in queue: {url}")
+                    return None
+                
+                if url_record.status == "done":
+                    logger.info(f"[SPIDER] URL already done, skipping: {url}")
+                    return None
+                
+                if url_record.processing_count <= -5:
+                    logger.warning(f"[SPIDER] URL processing_count too low ({url_record.processing_count}), skipping: {url}")
+                    return None
+                
+                logger.info(f"[SPIDER] URL status: {url_record.status}, processing_count: {url_record.processing_count}")
+                
+                url_record.status = "processing"
+                url_record.last_processed_at = datetime.utcnow()
+                await session.commit()
+            
+            await self._apply_cooldown()
+            
+            request = ScrapeRequest(url=url)
+            scrape_result = await self.scraper_service.scrape(request)
+            
+            async with self.session_factory() as repo_session:
+                repo = RepositoryService(repo_session)
+                job_id = await repo.create_scrape_job(url)
+                await repo.update_job_status(job_id, "started")
+                
+                try:
+                    result_id = await repo.save_scrape_result(job_id, scrape_result)
+                    await repo.update_job_status(job_id, "completed")
+                    await repo_session.commit()
+                    
+                    logger.info(f"[SPIDER] Successfully scraped URL: {url}, found {len(scrape_result.article_links)} article links")
+                    
+                    await self._enqueue_article_links(scrape_result.article_links, url)
+                    
+                    async with self.session_factory() as update_session:
+                        stmt = update(UrlQueue).where(UrlQueue.url == url).values(
+                            status="done",
+                            processing_count=1,
+                            error_message=None,
+                            last_processed_at=datetime.utcnow()
+                        )
+                        await update_session.execute(stmt)
+                        await update_session.commit()
+                    
+                    return scrape_result
+                    
+                except Exception as e:
+                    try:
+                        await repo_session.rollback()
+                        await repo.update_job_status(job_id, "failed", str(e)[:500])
+                        await repo_session.commit()
+                    except Exception as rollback_error:
+                        logger.error(f"[SPIDER] Failed to update job status: {rollback_error}")
+                    logger.error(f"[SPIDER] Failed to save result for {url}: {e}")
+                    raise
+                
+        except Exception as e:
+            logger.error(f"[SPIDER] Error processing URL {url}: {e}", exc_info=True)
+            
+            try:
+                async with self.session_factory() as error_session:
+                    stmt = update(UrlQueue).where(UrlQueue.url == url).values(
+                        processing_count=UrlQueue.processing_count - 1,
+                        status="failed",
+                        error_message=str(e)[:500],
+                        last_processed_at=datetime.utcnow()
+                    )
+                    await error_session.execute(stmt)
+                    await error_session.commit()
+            except Exception as commit_error:
+                logger.error(f"[SPIDER] Failed to update URL status: {commit_error}")
+            
+            return None
+    
+    async def _enqueue_article_links(self, article_links: set[str], source_url: str):
+        """Enqueue article links sorted by URL length (size)"""
+        if not article_links:
+            logger.debug(f"[SPIDER] No article links to enqueue from {source_url}")
+            return
+        
+        sorted_links = sorted(article_links, key=len, reverse=True)
+        logger.info(f"[SPIDER] Enqueueing {len(sorted_links)} article links from {source_url}, sorted by length")
+        
+        enqueued_count = 0
+        skipped_count = 0
+        
+        for link in sorted_links:
+            if not self.running:
+                break
+            
+            try:
+                queue_size = self.queue.queue.qsize() if self.queue else 0
+            except Exception:
+                queue_size = 0
+            
+            if queue_size >= self.max_queue_size:
+                logger.warning(f"[SPIDER] Queue full ({self.max_queue_size}), stopping enqueue")
+                break
+            
+            try:
+                async with self.session_factory() as session:
+                    stmt = select(UrlQueue).where(UrlQueue.url == link)
+                    result = await session.execute(stmt)
+                    existing = result.scalar_one_or_none()
+                    
+                    if existing:
+                        if existing.status == "done":
+                            skipped_count += 1
+                            continue
+                        if existing.processing_count <= -5:
+                            skipped_count += 1
+                            continue
+                        existing.status = "pending"
+                        existing.priority = 0
+                        await session.commit()
+                    else:
+                        try:
+                            url_record = UrlQueue(
+                                url=link,
+                                processing_count=0,
+                                status="pending",
+                                priority=0,
+                                created_at=datetime.utcnow()
+                            )
+                            session.add(url_record)
+                            await session.commit()
+                        except IntegrityError:
+                            await session.rollback()
+                            skipped_count += 1
+                            continue
+                    
+                    if self.queue:
+                        await self.queue.enqueue(link, priority=0)
+                        enqueued_count += 1
+                        logger.debug(f"[SPIDER] Enqueued: {link}")
+                
+            except IntegrityError:
+                skipped_count += 1
+                continue
+            except Exception as e:
+                logger.error(f"[SPIDER] Error enqueueing link {link}: {e}")
+                continue
+        
+        logger.info(f"[SPIDER] Enqueued {enqueued_count} links, skipped {skipped_count} links")
+    
+    async def _apply_cooldown(self):
+        """Apply cooldown between requests"""
+        if self.cooldown_seconds > 0:
+            await asyncio.sleep(self.cooldown_seconds)
+    
+    async def enqueue_url(self, url: str, priority: int = 0) -> bool:
+        """Enqueue a URL for processing"""
+        if not self.running:
+            logger.warning("[SPIDER] Not running, cannot enqueue")
+            return False
+        
+        try:
+            async with self.session_factory() as session:
+                stmt = select(UrlQueue).where(UrlQueue.url == url)
+                result = await session.execute(stmt)
+                existing = result.scalar_one_or_none()
+                
+                if existing:
+                    if existing.status == "done":
+                        logger.info(f"[SPIDER] URL already done: {url}")
+                        return False
+                    if existing.processing_count <= -5:
+                        logger.warning(f"[SPIDER] URL processing_count too low: {url}")
+                        return False
+                    existing.status = "pending"
+                    existing.priority = priority
+                    await session.commit()
+                else:
+                    try:
+                        url_record = UrlQueue(
+                            url=url,
+                            processing_count=0,
+                            status="pending",
+                            priority=priority,
+                            created_at=datetime.utcnow()
+                        )
+                        session.add(url_record)
+                        await session.commit()
+                    except IntegrityError:
+                        await session.rollback()
+                        logger.debug(f"[SPIDER] URL already exists (duplicate): {url}")
+                        return False
+                
+                if self.queue:
+                    await self.queue.enqueue(url, priority=priority)
+                    logger.info(f"[SPIDER] Enqueued URL: {url} with priority {priority}")
+                    return True
+                
+                return False
+                
+        except Exception as e:
+            logger.error(f"[SPIDER] Error enqueueing URL {url}: {e}")
+            return False
+    
+    async def get_queue_stats(self) -> dict:
+        """Get queue statistics"""
+        try:
+            pending_stmt = select(UrlQueue).where(UrlQueue.status == "pending")
+            processing_stmt = select(UrlQueue).where(UrlQueue.status == "processing")
+            done_stmt = select(UrlQueue).where(UrlQueue.status == "done")
+            failed_stmt = select(UrlQueue).where(UrlQueue.status == "failed")
+            
+            async with self.session_factory() as session:
+                pending_result = await session.execute(pending_stmt)
+                processing_result = await session.execute(processing_stmt)
+                done_result = await session.execute(done_stmt)
+                failed_result = await session.execute(failed_stmt)
+                
+                try:
+                    queue_size = self.queue.queue.qsize() if self.queue else 0
+                except Exception:
+                    queue_size = 0
+                
+                return {
+                    "pending": len(pending_result.all()),
+                    "processing": len(processing_result.all()),
+                    "done": len(done_result.all()),
+                    "failed": len(failed_result.all()),
+                    "queue_size": queue_size,
+                    "max_queue_size": self.max_queue_size,
+                    "workers": self.max_workers,
+                    "running": self.running
+                }
+        except Exception as e:
+            logger.error(f"[SPIDER] Error getting stats: {e}")
+            return {}

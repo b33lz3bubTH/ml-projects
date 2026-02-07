@@ -70,3 +70,7 @@ class DatabaseManager:
     @property
     def engine(self):
         return self._engine
+    
+    @property
+    def session_factory(self):
+        return self._session_factory

@@ -65,8 +65,8 @@ class ImageUrl(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     __table_args__ = (
-        Index('idx_result_url', 'result_id', 'url'),
-        Index('idx_url_unique', 'url'),
+        Index('idx_image_result_url', 'result_id', 'url'),
+        Index('idx_image_url_unique', 'url'),
     )
 
 
@@ -94,6 +94,26 @@ class ArticleLink(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     __table_args__ = (
-        Index('idx_result_url', 'result_id', 'url'),
-        Index('idx_url_unique', 'url'),
+        Index('idx_article_result_url', 'result_id', 'url'),
+        Index('idx_article_url_unique', 'url'),
+    )
+
+
+class UrlQueue(Base):
+    """URL queue table for spider - loosely coupled"""
+    __tablename__ = "url_queue"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String(2048), nullable=False, unique=True, index=True)
+    processing_count = Column(Integer, nullable=False, default=0, index=True)
+    status = Column(String(50), nullable=False, default="pending", index=True)
+    priority = Column(Integer, nullable=False, default=0, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_processed_at = Column(DateTime(timezone=True), nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    __table_args__ = (
+        Index('idx_status_count', 'status', 'processing_count'),
+        Index('idx_priority_status', 'priority', 'status'),
     )

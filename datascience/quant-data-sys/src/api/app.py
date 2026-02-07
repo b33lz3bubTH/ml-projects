@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from src.api.routes import router
-from src.api.dependencies import get_config, get_db_manager, get_queue_service
+from src.api.dependencies import get_config, get_db_manager
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -11,14 +11,10 @@ async def lifespan(app: FastAPI):
     
     from src.infrastructure.database.models import Base
     async with db_manager.engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    queue_service = get_queue_service()
-    await queue_service.start()
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     
     yield
     
-    await queue_service.stop()
     await db_manager.close()
 
 app = FastAPI(title="Quant Data System", lifespan=lifespan)

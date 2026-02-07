@@ -376,8 +376,6 @@ class HtmlCleaner:
         
         for a in self.soup.find_all("a"):
             href = a.get("href")
-
-            print(f"[RESOLVED SE PEHELE] href: {href}")
             
             if not href:
                 continue

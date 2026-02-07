@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def main():
-    url = "HMM"
+    url = "https://www.republicworld.com/"
     
     logger.info(f"Starting scraper for URL: {url}")
     

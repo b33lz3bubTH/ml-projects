@@ -176,12 +176,8 @@ class SpiderService:
             logger.debug(f"[SPIDER] No article links to enqueue from {source_url}")
             return
 
-        links_with_priority = [
-            (link, self.priority_policy.get_priority(link) if self.priority_policy else 0)
-            for link in sorted(article_links)
-        ]
-        ordered_links = self._interleave_links_by_domain(links_with_priority)
-        logger.info(f"[SPIDER] Enqueueing {len(ordered_links)} article links from {source_url}")
+        sorted_links = sorted(article_links)
+        logger.info(f"[SPIDER] Enqueueing {len(sorted_links)} article links from {source_url}")
         
         enqueued_count = 0
         skipped_count = 0

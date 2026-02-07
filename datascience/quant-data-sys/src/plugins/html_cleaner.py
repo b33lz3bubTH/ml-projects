@@ -283,7 +283,9 @@ class HtmlCleaner:
             if base_domain and not href.startswith(f"https://{base_domain}"):
                 continue
             
-            href = href.split("?")[0]  # remove tracking params
+            # Remove only fragments (#), keep query parameters (?)
+            if "#" in href:
+                href = href.split("#")[0]
             
             # length heuristic
             if len(href) < 80:
@@ -328,7 +330,9 @@ class HtmlCleaner:
             if not href:
                 continue
             
-            href = href.split("?")[0].split("#")[0]  # remove tracking params and fragments
+            # Remove only fragments (#), keep query parameters (?)
+            if "#" in href:
+                href = href.split("#")[0]
             
             if href.startswith("/"):
                 full_url = urljoin(base_netloc, href)
@@ -383,7 +387,9 @@ class HtmlCleaner:
             if not href:
                 continue
             
-            href = href.split("?")[0].split("#")[0]  # remove tracking params and fragments
+            # Remove only fragments (#), keep query parameters (?)
+            if "#" in href:
+                href = href.split("#")[0]
             
             if href.startswith("/"):
                 full_url = urljoin(base_netloc, href)

@@ -1,0 +1,8 @@
+1. i am not happy with the current implementation.
+2. it doesnt use the browser connection
+3. i want enterprise grade code.
+4. i want retry mechanism, playwright is costly, so yeah, there will be retry, cool down retries
+5. there will be parallel processing.
+6. i will implement a queue, so that i can process things in parallel, and this http client will be injected to sevrice as they will get used.
+7. i want things to be async, everything as async.
+8. headless browser will run somewhere else, so yeah. playright wont install chromium, everything will be via websocket

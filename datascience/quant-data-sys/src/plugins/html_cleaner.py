@@ -4,6 +4,9 @@ from bs4 import BeautifulSoup, Comment
 from pathlib import Path
 from typing import List, Set, Optional
 from urllib.parse import urlparse, urljoin
+import logging
+
+logger = logging.getLogger(__name__)
 
 class HtmlCleaner:
     def __init__(self, html_source: str):
@@ -396,10 +399,65 @@ class HtmlCleaner:
         
         return links
 
+    async def filter_probable_article_links(
+        self,
+        links: Set[str],
+        base_url: str,
+        min_slug_length: int = 20,
+        min_hyphen_count: int = 2,
+        min_path_depth: int = 1,
+        min_total_path_length: int = 40,
+        min_hyphen_ratio: float = 0.04
+    ) -> Set[str]:
+        """Filter resolved links to probable article URLs."""
+        if not links:
+            return set()
+        if not base_url:
+            return set()
+
+        parsed = urlparse(base_url)
+        base_domain = parsed.netloc
+        base_scheme = parsed.scheme or "https"
+        base_netloc = f"{base_scheme}://{base_domain}"
+        article_id_re = re.compile(r"-\d+$")
+        dated_path_re = re.compile(r"/\d{4}/\d{2}/\d{2}/")
+
+        filtered = set[str]()
+
+        for link in links:
+            if not link.startswith(base_netloc):
+                continue
+
+            parsed_link = urlparse(link)
+            path = parsed_link.path
+            if not path:
+                continue
+
+            if article_id_re.search(path) or dated_path_re.search(path):
+                filtered.add(link)
+                continue
+
+            if self._is_probable_article_slug(
+                path,
+                min_slug_length=min_slug_length,
+                min_hyphen_count=min_hyphen_count,
+                min_path_depth=min_path_depth,
+                min_total_path_length=min_total_path_length,
+                require_lowercase=True,
+                min_hyphen_ratio=min_hyphen_ratio
+            ):
+                filtered.add(link)
+
+        logger.debug(
+            "Filtered resolved links from %s to %s probable articles",
+            len(links),
+            len(filtered)
+        )
+        return filtered
+
     # ------------------------
     # FINAL OUTPUT
     # ------------------------
 
     async def get_html(self) -> str:
         return str(self.soup)
-

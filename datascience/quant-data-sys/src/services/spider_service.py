@@ -11,6 +11,7 @@ from src.infrastructure.database.models import UrlQueue
 from src.infrastructure.database.session import DatabaseManager
 from src.core.queue.async_queue import AsyncQueue
 from src.core.filters.filter_service import LinkFilterService
+from src.core.relevance.article_priority import ArticlePriorityPolicy
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class SpiderService:
         scraper_service: ScraperService,
         session_factory: async_sessionmaker,
         filter_service: Optional[LinkFilterService] = None,
+        priority_policy: Optional[ArticlePriorityPolicy] = None,
         max_workers: int = 3,
         max_queue_size: int = 876,
         cooldown_seconds: float = 1.0
@@ -31,6 +33,7 @@ class SpiderService:
         self.scraper_service = scraper_service
         self.session_factory = session_factory
         self.filter_service = filter_service
+        self.priority_policy = priority_policy
         self.max_workers = max_workers
         self.max_queue_size = max_queue_size
         self.cooldown_seconds = cooldown_seconds
@@ -167,13 +170,13 @@ class SpiderService:
             return None
     
     async def _enqueue_article_links(self, article_links: set[str], source_url: str):
-        """Enqueue article links sorted by URL length (size)"""
+        """Enqueue article links with priority ordering"""
         if not article_links:
             logger.debug(f"[SPIDER] No article links to enqueue from {source_url}")
             return
-        
-        sorted_links = sorted(article_links, key=len, reverse=True)
-        logger.info(f"[SPIDER] Enqueueing {len(sorted_links)} article links from {source_url}, sorted by length")
+
+        sorted_links = sorted(article_links)
+        logger.info(f"[SPIDER] Enqueueing {len(sorted_links)} article links from {source_url}")
         
         enqueued_count = 0
         skipped_count = 0
@@ -196,6 +199,13 @@ class SpiderService:
                 skipped_count += 1
                 logger.debug(f"[SPIDER] URL excluded by filter: {link}")
                 continue
+
+            if self.priority_policy and self.priority_policy.should_exclude_url(link):
+                skipped_count += 1
+                logger.debug(f"[SPIDER] URL excluded by priority policy: {link}")
+                continue
+
+            priority = self.priority_policy.get_priority(link) if self.priority_policy else 0
             
             try:
                 async with self.session_factory() as session:
@@ -211,7 +221,7 @@ class SpiderService:
                             skipped_count += 1
                             continue
                         existing.status = "pending"
-                        existing.priority = 0
+                        existing.priority = priority
                         await session.commit()
                     else:
                         try:
@@ -219,7 +229,7 @@ class SpiderService:
                                 url=link,
                                 processing_count=0,
                                 status="pending",
-                                priority=0,
+                                priority=priority,
                                 created_at=datetime.utcnow()
                             )
                             session.add(url_record)
@@ -230,7 +240,7 @@ class SpiderService:
                             continue
                     
                     if self.queue:
-                        await self.queue.enqueue(link, priority=0)
+                        await self.queue.enqueue(link, priority=priority)
                         enqueued_count += 1
                         logger.debug(f"[SPIDER] Enqueued: {link}")
                 
@@ -258,6 +268,13 @@ class SpiderService:
         if self.filter_service and self.filter_service.should_exclude_url(url):
             logger.debug(f"[SPIDER] URL excluded by filter: {url}")
             return False
+
+        if self.priority_policy and self.priority_policy.should_exclude_url(url):
+            logger.debug(f"[SPIDER] URL excluded by priority policy: {url}")
+            return False
+
+        if priority == 0 and self.priority_policy:
+            priority = self.priority_policy.get_priority(url)
         
         try:
             async with self.session_factory() as session:

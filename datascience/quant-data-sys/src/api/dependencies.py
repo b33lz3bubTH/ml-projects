@@ -6,6 +6,7 @@ from src.services.scraper_service import ScraperService
 from src.services.spider_service import SpiderService
 from src.core.filters.filter_service import LinkFilterService
 from src.core.filters.pattern_filter import PatternLinkFilter
+from src.core.relevance.article_priority import ArticlePriorityPolicy
 from src.dto.config_dto import AppConfigDTO
 
 _config: AppConfigDTO = None
@@ -60,6 +61,28 @@ def get_filter_service() -> LinkFilterService:
         r'/search\?',
         r'\.(pdf|doc|docx|xls|xlsx|zip|rar)$',
         r'#',
+        r'/sports?/',
+        r'/sport/',
+        r'/cricket/',
+        r'/football/',
+        r'/tennis/',
+        r'/basketball/',
+        r'/olympics?/',
+        r'/entertainment/',
+        r'/bollywood/',
+        r'/hollywood/',
+        r'/celebrity/',
+        r'/movie/',
+        r'/music/',
+        r'/tv/',
+        r'/lifestyle/',
+        r'/fashion/',
+        r'/beauty/',
+        r'/travel/',
+        r'/food/',
+        r'/recipe/',
+        r'/horoscope/',
+        r'/astrology/',
     ]
     
     default_content_patterns = [
@@ -77,12 +100,18 @@ def get_filter_service() -> LinkFilterService:
     return filter_service
 
 
+def get_priority_policy() -> ArticlePriorityPolicy:
+    """Get default article priority policy."""
+    return ArticlePriorityPolicy()
+
+
 def get_spider_service() -> SpiderService:
     """Get spider service - uses session factory"""
     config = get_config()
     scraper_service = get_scraper_service()
     db_manager = get_db_manager()
     filter_service = get_filter_service()
+    priority_policy = get_priority_policy()
     
     if db_manager.session_factory is None:
         raise RuntimeError("Database not initialized")
@@ -91,6 +120,7 @@ def get_spider_service() -> SpiderService:
         scraper_service,
         db_manager.session_factory,
         filter_service=filter_service,
+        priority_policy=priority_policy,
         max_workers=3,
         max_queue_size=876,
         cooldown_seconds=config.retry.cooldown_seconds

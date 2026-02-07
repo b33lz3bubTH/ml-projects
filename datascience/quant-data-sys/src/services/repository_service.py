@@ -63,6 +63,9 @@ class RepositoryService:
             url=result.url,
             html=result.html,
             cleaned_html=result.cleaned_html,
+            debug_ref=result.debug_ref,
+            debug_html_path=result.debug_html_path,
+            debug_json_path=result.debug_json_path,
             created_at=datetime.utcnow()
         )
         self.session.add(db_result)

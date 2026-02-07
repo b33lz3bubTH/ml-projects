@@ -32,6 +32,9 @@ class ScrapeResult(Base):
     url = Column(String(2048), nullable=False, index=True)
     html = Column(Text, nullable=True)
     cleaned_html = Column(Text, nullable=True)
+    debug_ref = Column(String(255), nullable=True)
+    debug_html_path = Column(Text, nullable=True)
+    debug_json_path = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     __table_args__ = (

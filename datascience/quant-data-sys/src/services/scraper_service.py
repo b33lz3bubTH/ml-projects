@@ -27,9 +27,12 @@ class ScraperService:
             scraper_name = scraper.__class__.__name__
             logger.info(f"Scrape completed successfully using {scraper_name}")
             
-            html_path, json_path = DebugSaver.save_debug_files(result, scraper_name)
+            html_path, json_path, filename_base = DebugSaver.save_debug_files(result, scraper_name)
             if html_path and json_path:
                 logger.info(f"[DEBUG] Debug files saved - HTML: {html_path}, JSON: {json_path}")
+                result.debug_html_path = html_path
+                result.debug_json_path = json_path
+                result.debug_ref = filename_base
             
             return result
         except Exception as e:

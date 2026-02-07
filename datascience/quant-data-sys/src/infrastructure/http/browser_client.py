@@ -1,5 +1,6 @@
 from typing import Optional
 import logging
+import asyncio
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from src.dto.http_dto import HttpRequestDTO, HttpResponseDTO, BrowserConfigDTO
 from src.core.exceptions import BrowserConnectionException, HttpClientException
@@ -80,9 +81,11 @@ class BrowserClient:
                 await page.set_extra_http_headers(request.headers)
             
             timeout = request.timeout or self.config.timeout
+            
+            logger.debug(f"[BROWSER MODE] Navigating to URL with timeout: {timeout}ms")
             response = await page.goto(
                 request.url,
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=timeout
             )
             
@@ -95,6 +98,42 @@ class BrowserClient:
                     f"HTTP {status_code} error",
                     retry_after=2.0 if status_code < 500 else 10.0
                 )
+            
+            if self.config.wait_for_dom:
+                logger.debug("[BROWSER MODE] Waiting for page to be fully loaded...")
+                try:
+                    await page.wait_for_load_state("load", timeout=min(timeout, 30000))
+                except Exception as e:
+                    logger.warning(f"[BROWSER MODE] Load state wait timed out: {e}")
+                
+                logger.debug("[BROWSER MODE] Waiting for DOM to be complete...")
+                try:
+                    await page.wait_for_function(
+                        "document.readyState === 'complete'",
+                        timeout=min(timeout // 2, 10000)
+                    )
+                except Exception:
+                    logger.debug("[BROWSER MODE] DOM ready state check timed out, continuing...")
+            
+            if self.config.wait_for_network_idle:
+                logger.debug("[BROWSER MODE] Waiting for network to be idle...")
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=min(timeout, 30000))
+                except Exception as e:
+                    logger.warning(f"[BROWSER MODE] Network idle wait timed out: {e}")
+            
+            if self.config.additional_wait_seconds > 0:
+                logger.debug(f"[BROWSER MODE] Waiting additional {self.config.additional_wait_seconds}s for dynamic content...")
+                await asyncio.sleep(self.config.additional_wait_seconds)
+            
+            logger.debug("[BROWSER MODE] Scrolling to trigger lazy-loaded content...")
+            try:
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(0.5)
+                await page.evaluate("window.scrollTo(0, 0)")
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.debug(f"[BROWSER MODE] Scroll failed: {e}")
             
             content = await page.content()
             response_headers = await response.all_headers()

@@ -56,7 +56,10 @@ class HttpClientFactory:
         browser_config = BrowserConfigDTO(
             websocket_url=config.playwright_websocket_url,
             user_agent=HttpxClient.USER_AGENTS[config.user_agent_index] if HttpxClient.USER_AGENTS else "Mozilla/5.0",
-            timeout=config.http_timeout * 1000
+            timeout=config.http_timeout * 1000,
+            wait_for_dom=True,
+            wait_for_network_idle=True,
+            additional_wait_seconds=2.0
         )
         
         return BrowserClient(browser_config, retry_handler)

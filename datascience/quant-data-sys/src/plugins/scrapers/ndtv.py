@@ -84,6 +84,12 @@ class NdtvScraper(GenericScraper):
         article_links = await cleaner.extract_article_links(base_url=self.url)
         logger.info(f"[NDTV SCRAPER] Extracted {len(article_links)} article links")
         
+        all_resolved_links = await cleaner.extract_all_resolved_links(base_url=self.url, min_length=25)
+        logger.debug(f"[NDTV SCRAPER] Extracted {len(all_resolved_links)} resolved links (length > 25)")
+        
+        article_links = article_links.union(all_resolved_links)
+        logger.info(f"[NDTV SCRAPER] Total article links after merging: {len(article_links)}")
+        
         cleaner = await self._run_cleaning_pipeline(cleaner)
         cleaned_html = await cleaner.get_html()
         logger.debug(f"[NDTV SCRAPER] Cleaned HTML length: {len(cleaned_html)} characters")

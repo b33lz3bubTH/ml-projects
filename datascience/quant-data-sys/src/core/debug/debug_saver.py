@@ -48,7 +48,7 @@ class DebugSaver:
         return title or "untitled"
     
     @staticmethod
-    async def save_debug_files(
+    def save_debug_files(
         result: ScrapeResult,
         scraper_name: str
     ) -> tuple[str, str]:
@@ -67,10 +67,12 @@ class DebugSaver:
             
             filename_base = f"{sanitized_title}_{file_uuid}"
             
+            html_cleaned_file = base_dir / f"{filename_base}_cleaned.html"
             html_file = base_dir / f"{filename_base}.html"
             json_file = base_dir / f"{filename_base}.json"
             
             html_file.write_text(result.html, encoding="utf-8")
+            html_cleaned_file.write_text(result.cleaned_html, encoding="utf-8")
             logger.info(f"[DEBUG] Saved HTML to: {html_file}")
             
             debug_data = {
@@ -82,7 +84,6 @@ class DebugSaver:
                 "article_links": list(result.article_links),
                 "html_length": len(result.html),
                 "cleaned_html_length": len(result.cleaned_html),
-                "cleaned_html": result.cleaned_html
             }
             
             json_file.write_text(
@@ -91,7 +92,7 @@ class DebugSaver:
             )
             logger.info(f"[DEBUG] Saved JSON to: {json_file}")
             
-            return (str(html_file), str(json_file)))
+            return (str(html_file), str(json_file))
         except Exception as e:
             logger.error(f"[DEBUG] Failed to save debug files: {e}", exc_info=True)
             return (None, None)

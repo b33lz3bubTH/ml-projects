@@ -2,8 +2,8 @@ import asyncio
 import re
 from bs4 import BeautifulSoup, Comment
 from pathlib import Path
-from typing import List, Set
-from urllib.parse import urlparse
+from typing import List, Set, Optional
+from urllib.parse import urlparse, urljoin
 
 class HtmlCleaner:
     def __init__(self, html_source: str):
@@ -200,8 +200,60 @@ class HtmlCleaner:
                 results.append(tag.string.strip())
         return results
 
+    @staticmethod
+    def _is_probable_article_slug(
+        url_path: str,
+        min_slug_length: int = 30,
+        min_hyphen_count: int = 3,
+        min_path_depth: int = 1,
+        min_total_path_length: int = 50,
+        exclude_paths: Optional[Set[str]] = None,
+        require_lowercase: bool = True,
+        min_hyphen_ratio: float = 0.05
+    ) -> bool:
+        """Check if URL path looks like an article slug using configurable heuristics"""
+        if not url_path:
+            return False
+        
+        if exclude_paths is None:
+            exclude_paths = set()
+        
+        normalized_path = url_path.strip("/")
+        if not normalized_path:
+            return False
+        
+        parts = [p for p in normalized_path.split("/") if p]
+        
+        if len(parts) < min_path_depth:
+            return False
+        
+        if any(part.lower() in exclude_paths for part in parts):
+            return False
+        
+        slug = parts[-1]
+        total_path_length = len(normalized_path)
+        
+        if total_path_length < min_total_path_length:
+            return False
+        
+        if len(slug) < min_slug_length:
+            return False
+        
+        hyphen_count = slug.count("-")
+        if hyphen_count < min_hyphen_count:
+            return False
+        
+        hyphen_ratio = hyphen_count / len(slug) if len(slug) > 0 else 0
+        if hyphen_ratio < min_hyphen_ratio:
+            return False
+        
+        if require_lowercase and not slug.islower():
+            return False
+        
+        return True
+    
     async def extract_article_links(self, base_url: str = None) -> Set[str]:
-        """Extract article links from the page"""
+        """Extract article links from the page (ID-based detection)"""
         ARTICLE_ID_RE = re.compile(r"-\d+$")
         links = set()
         
@@ -239,6 +291,110 @@ class HtmlCleaner:
                 continue
             
             links.add(href)
+        
+        return links
+    
+    async def extract_slug_article_links(
+        self,
+        base_url: str,
+        min_slug_length: int = 30,
+        min_hyphen_count: int = 3,
+        min_path_depth: int = 1,
+        min_total_path_length: int = 50,
+        exclude_paths: Optional[Set[str]] = None,
+        require_lowercase: bool = True,
+        min_hyphen_ratio: float = 0.05
+    ) -> Set[str]:
+        """Extract article links using configurable slug-based detection"""
+        links = set()
+        
+        if not base_url:
+            return links
+        
+        if exclude_paths is None:
+            exclude_paths = set()
+        
+        parsed = urlparse(base_url)
+        base_domain = parsed.netloc
+        base_scheme = parsed.scheme or "https"
+        base_netloc = f"{base_scheme}://{base_domain}"
+        
+        for a in self.soup.find_all("a"):
+            href = a.get("href")
+            
+            if not href:
+                continue
+            
+            href = href.split("?")[0].split("#")[0]  # remove tracking params and fragments
+            
+            if href.startswith("/"):
+                full_url = urljoin(base_netloc, href)
+                path = href
+            elif href.startswith(f"{base_scheme}://{base_domain}"):
+                full_url = href
+                parsed_href = urlparse(href)
+                path = parsed_href.path
+            else:
+                continue
+            
+            if not self._is_probable_article_slug(
+                path,
+                min_slug_length=min_slug_length,
+                min_hyphen_count=min_hyphen_count,
+                min_path_depth=min_path_depth,
+                min_total_path_length=min_total_path_length,
+                exclude_paths=exclude_paths,
+                require_lowercase=require_lowercase,
+                min_hyphen_ratio=min_hyphen_ratio
+            ):
+                continue
+            
+            links.add(full_url)
+        
+        return links
+    
+    async def extract_all_resolved_links(
+        self,
+        base_url: str,
+        min_length: int = 25
+    ) -> Set[str]:
+        """Extract all resolved links with length over min_length characters
+        
+        This function finds all <a> tags, resolves relative URLs to absolute,
+        and returns links that exceed the minimum character length.
+        Useful for discovering article links and navigation.
+        """
+        links = set[str]()
+        
+        if not base_url:
+            return links
+        
+        parsed = urlparse(base_url)
+        base_domain = parsed.netloc
+        base_scheme = parsed.scheme or "https"
+        base_netloc = f"{base_scheme}://{base_domain}"
+        
+        for a in self.soup.find_all("a"):
+            href = a.get("href")
+
+            print(f"[RESOLVED SE PEHELE] href: {href}")
+            
+            if not href:
+                continue
+            
+            href = href.split("?")[0].split("#")[0]  # remove tracking params and fragments
+            
+            if href.startswith("/"):
+                full_url = urljoin(base_netloc, href)
+            elif href.startswith(f"{base_scheme}://{base_domain}"):
+                full_url = href
+            elif href.startswith("http://") or href.startswith("https://"):
+                continue
+            else:
+                full_url = urljoin(base_netloc, href)
+            
+            if len(full_url) > min_length:
+                links.add(full_url)
         
         return links
 

@@ -29,3 +29,6 @@ class BrowserConfigDTO:
     viewport_height: int = 1080
     timeout: int = 30000
     extra_headers: Optional[Dict[str, str]] = None
+    wait_for_dom: bool = True
+    wait_for_network_idle: bool = True
+    additional_wait_seconds: float = 2.0

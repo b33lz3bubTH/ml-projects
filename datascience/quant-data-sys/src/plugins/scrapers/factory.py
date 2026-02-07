@@ -53,8 +53,12 @@ class ScraperFactory:
 def register_scrapers():
     """Register all site-specific scrapers"""
     from src.plugins.scrapers.ndtv import NdtvScraper
+    from src.plugins.scrapers.republic import RepublicScraper
     
     ScraperFactory.register("ndtv.com", NdtvScraper)
     ScraperFactory.register("ndtvprofit.com", NdtvScraper)
     ScraperFactory.register("www.ndtv.com", NdtvScraper)
     ScraperFactory.register("www.ndtvprofit.com", NdtvScraper)
+    
+    ScraperFactory.register("republicworld.com", RepublicScraper)
+    ScraperFactory.register("www.republicworld.com", RepublicScraper)

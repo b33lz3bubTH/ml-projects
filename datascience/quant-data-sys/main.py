@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def main():
-    url = "https://www.ndtv.com/india-news/bjps-ritu-tawde-to-be-mumbai-mayor-shiv-senas-sanjay-shankar-ghadi-to-be-deputy-mayor-10963304?pfrom=home-ndtv_topscroll"
+    url = "HMM"
     
     logger.info(f"Starting scraper for URL: {url}")
     

@@ -10,6 +10,7 @@ from src.services.repository_service import RepositoryService
 from src.infrastructure.database.models import UrlQueue
 from src.infrastructure.database.session import DatabaseManager
 from src.core.queue.async_queue import AsyncQueue
+from src.core.filters.filter_service import LinkFilterService
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,14 @@ class SpiderService:
         self,
         scraper_service: ScraperService,
         session_factory: async_sessionmaker,
+        filter_service: Optional[LinkFilterService] = None,
         max_workers: int = 3,
         max_queue_size: int = 876,
         cooldown_seconds: float = 1.0
     ):
         self.scraper_service = scraper_service
         self.session_factory = session_factory
+        self.filter_service = filter_service
         self.max_workers = max_workers
         self.max_queue_size = max_queue_size
         self.cooldown_seconds = cooldown_seconds
@@ -94,6 +97,20 @@ class SpiderService:
             
             request = ScrapeRequest(url=url)
             scrape_result = await self.scraper_service.scrape(request)
+            
+            # Second layer: Check content filter
+            if self.filter_service and self.filter_service.should_exclude_content(url, scrape_result.html or ""):
+                logger.info(f"[SPIDER] Content excluded by filter, skipping: {url}")
+                async with self.session_factory() as update_session:
+                    stmt = update(UrlQueue).where(UrlQueue.url == url).values(
+                        status="done",
+                        processing_count=1,
+                        error_message="Excluded by content filter",
+                        last_processed_at=datetime.utcnow()
+                    )
+                    await update_session.execute(stmt)
+                    await update_session.commit()
+                return None
             
             async with self.session_factory() as repo_session:
                 repo = RepositoryService(repo_session)
@@ -174,6 +191,12 @@ class SpiderService:
                 logger.warning(f"[SPIDER] Queue full ({self.max_queue_size}), stopping enqueue")
                 break
             
+            # First layer: Check URL filter
+            if self.filter_service and self.filter_service.should_exclude_url(link):
+                skipped_count += 1
+                logger.debug(f"[SPIDER] URL excluded by filter: {link}")
+                continue
+            
             try:
                 async with self.session_factory() as session:
                     stmt = select(UrlQueue).where(UrlQueue.url == link)
@@ -229,6 +252,11 @@ class SpiderService:
         """Enqueue a URL for processing"""
         if not self.running:
             logger.warning("[SPIDER] Not running, cannot enqueue")
+            return False
+        
+        # First layer: Check URL filter
+        if self.filter_service and self.filter_service.should_exclude_url(url):
+            logger.debug(f"[SPIDER] URL excluded by filter: {url}")
             return False
         
         try:

@@ -34,7 +34,7 @@ class GenericScraper(BaseScraper):
         article_links = article_links.union(slug_links)
         
         all_resolved_links = await cleaner.extract_all_resolved_links(base_url=self.url, min_length=25)
-        logger.debug(f"[GENERIC SCRAPER] Extracted {len(all_resolved_links)} resolved links (length > 25)")
+        logger.debug(f"[GENERIC SCRAPER] Extracted {len(all_resolved_links)} resolved links (length > 25) \n {all_resolved_links}")
 
         filtered_links = await cleaner.filter_probable_article_links(
             all_resolved_links,

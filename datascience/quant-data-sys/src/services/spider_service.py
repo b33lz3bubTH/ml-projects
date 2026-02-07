@@ -1,6 +1,7 @@
-from typing import Optional, List
+from typing import Optional, List, Iterable, Tuple, Dict
 import logging
 import asyncio
+from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update, and_
 from sqlalchemy.exc import IntegrityError
@@ -181,7 +182,7 @@ class SpiderService:
         enqueued_count = 0
         skipped_count = 0
         
-        for link in sorted_links:
+        for link, priority in ordered_links:
             if not self.running:
                 break
             
@@ -204,8 +205,6 @@ class SpiderService:
                 skipped_count += 1
                 logger.debug(f"[SPIDER] URL excluded by priority policy: {link}")
                 continue
-
-            priority = self.priority_policy.get_priority(link) if self.priority_policy else 0
             
             try:
                 async with self.session_factory() as session:
@@ -252,6 +251,30 @@ class SpiderService:
                 continue
         
         logger.info(f"[SPIDER] Enqueued {enqueued_count} links, skipped {skipped_count} links")
+
+    def _interleave_links_by_domain(
+        self,
+        links_with_priority: Iterable[Tuple[str, int]]
+    ) -> List[Tuple[str, int]]:
+        """Interleave links by domain within priority groups to avoid source starvation."""
+        priority_groups: Dict[int, Dict[str, List[str]]] = {}
+
+        for link, priority in links_with_priority:
+            domain = urlparse(link).netloc or "unknown"
+            priority_groups.setdefault(priority, {}).setdefault(domain, []).append(link)
+
+        ordered: List[Tuple[str, int]] = []
+        for priority in sorted(priority_groups.keys()):
+            domain_map = priority_groups[priority]
+            domains = sorted(domain_map.keys())
+            domain_queues = {domain: list(urls) for domain, urls in domain_map.items()}
+
+            while any(domain_queues.values()):
+                for domain in domains:
+                    if domain_queues[domain]:
+                        ordered.append((domain_queues[domain].pop(0), priority))
+
+        return ordered
     
     async def _apply_cooldown(self):
         """Apply cooldown between requests"""

@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 from src.dto.scraper_dto import ScrapeRequest, ScrapeResult
 from src.api.dependencies import (
     get_db_session,
     get_scraper_service,
     get_spider_service
 )
+from src.core.relevance.news_sources import get_default_news_sources
 from src.services.scraper_service import ScraperService
 from src.services.spider_service import SpiderService
 from src.services.repository_service import RepositoryService
@@ -55,6 +55,43 @@ async def enqueue_url(
             return {"status": "enqueued", "url": request.url}
         else:
             return {"status": "skipped", "url": request.url, "reason": "already processed or invalid"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/spider/seed-sources", response_model=dict)
+async def seed_best_sources():
+    """Seed spider with best news sources and official press release feeds."""
+    try:
+        spider_service = get_spider_service()
+        await spider_service.start()
+
+        sources = get_default_news_sources()
+        results = []
+        enqueued = 0
+        skipped = 0
+
+        for source in sources:
+            success = await spider_service.enqueue_url(source.seed_url, priority=source.priority)
+            results.append(
+                {
+                    "source": source.name,
+                    "url": source.seed_url,
+                    "priority": source.priority,
+                    "status": "enqueued" if success else "skipped"
+                }
+            )
+            if success:
+                enqueued += 1
+            else:
+                skipped += 1
+
+        return {
+            "status": "completed",
+            "enqueued": enqueued,
+            "skipped": skipped,
+            "sources": results
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

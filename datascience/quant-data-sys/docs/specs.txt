@@ -1,9 +1,0 @@
-1. use SOLID principals
-2. use design patterns, chain of responsibility, singleton, factory, sidecar, adapter
-3. everything will be async
-4. use postgres and sqlalchemy, schema will be loosely coupled, no cascading or any shit, just normal foreign key ref without any constrain, fk might be invalid and am okay with that, index on unique values, use normalization techniques, but avoid constrain, it will be a huge dump tables.
-5. use headless browser, wss link will be provided
-6. fastapi for getting data, but it will be separate from the business logic.
-7. folder structure will be enterprise grade.
-8. dont use dict, use DTOs object everywhere, for input and output for methods and functions, i want things very tightly coupled.
-

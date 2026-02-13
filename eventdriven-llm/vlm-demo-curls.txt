@@ -1,0 +1,36 @@
+  
+  # just testing
+  curl -X POST https://c382-103-59-73-211.ngrok-free.app/webhook \
+  -H "ngrok-skip-browser-warning: true" \
+  -H "Content-Type: application/json" \
+  -d '{"test": "message"}'
+  
+  #proper
+  curl -X POST https://televisions-sys-people-paxil.trycloudflare.com/extract \
+  -H "Content-Type: application/json" \
+  -H "ngrok-skip-browser-warning: true" \
+  -H "User-Agent: Custom-Client/1.0" \
+  -d '{
+    "task_id": "url_image_task-2",
+    "prompt": "extract the text from the receipt image",
+    "system_prompt": "You are a receipt extraction assistant. Extract store name, date, items, and total amount as structured JSON.",
+    "template": "{\"store_name\": \"\", \"date\": \"\", \"items\": [], \"total\": \"\"}",
+    "images": ["https://img.freepik.com/free-vector/realistic-receipt-template_23-2147938550.jpg?semt=ais_user_personalization&w=740&q=80"],
+    "webhook_url": "https://c382-103-59-73-211.ngrok-free.app/webhook",
+    "metadata": {"source": "curl_command_fixed", "type": "receipt_extraction"}
+  }'
+  
+  
+  curl -X POST https://televisions-sys-people-paxil.trycloudflare.com/extract \
+  -H "Content-Type: application/json" \
+  -H "ngrok-skip-browser-warning: true" \
+  -H "User-Agent: Custom-Client/1.0" \
+  -d '{
+    "task_id": "chat_extraction_detailed_1",
+    "prompt": "Extract the complete chat conversation from this image. Include all messages in order, identify the sender type, and note any menu options presented.",
+    "system_prompt": "You are a conversation analyst. Extract chat messages with full context including menu options and user selections.",
+    "template": "{\"conversation\": [{\"sender\": \"\", \"message\": \"\", \"timestamp\": \"\", \"type\": \"\"}], \"menu_options\": [], \"summary\": \"\"}",
+    "images": ["https://archive.smashing.media/assets/344dbf88-fdf9-42bb-adb4-46f01eedd629/76279df0-e348-4469-8f86-d5c940513c3a/topbots-chatbots-1-flowers-brokenrecord-cut-650-opt.png"],
+    "webhook_url": "https://c382-103-59-73-211.ngrok-free.app/webhook",
+    "metadata": {"source": "chat_extraction_detailed"}
+  }'
